@@ -3,15 +3,17 @@ with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Ada.Exceptions;
 with Ada.Command_Line;
+with Chat_Messages;
 
 
 -- ****   gnatmake -I/usr/local/ll/lib cleint.adb ******
 
 
-procedure Server is
+procedure chat_server is
    package LLU renames Lower_Layer_UDP;
    package ASU renames Ada.Strings.Unbounded;
    package ACL renames Ada.Command_Line;
+   package CM renames Chat_Messages;
 
    Server_EP: LLU.End_Point_Type;
    Client_EP: LLU.End_Point_Type;
@@ -20,6 +22,9 @@ procedure Server is
    Reply: ASU.Unbounded_String := ASU.To_Unbounded_String ("¡Bienvenido!");
    Expired : Boolean;
    Usage_Error: exception;
+   Nick_Name: ASU.Unbounded_String;
+   Message: CM.Message_Type;
+   Comment: ASU.Unbounded_String;
 
 
    procedure Bild_ServeEP (Server_EP: out LLU.End_Point_Type) is
@@ -29,9 +34,36 @@ procedure Server is
      Server_Port := Integer'Value(ACL.Argument(1));
      Server_IP := ASU.To_Unbounded_String(LLU.To_IP(LLU.Get_Host_Name));
      Server_EP := LLU.Build(ASU.To_String(Server_IP), Server_Port);
-     --Server_EP := LLU.Build ("127.0.0.1", 6123);
      LLU.Bind(Server_EP);
    end Bild_ServeEP;
+
+
+   procedure Type_Message (Message: out CM.Message_Type) is
+   begin
+     Message:= CM.Message_Type'Input (Buffer'Access);
+   end Type_Message;
+
+
+   procedure Read_Init(Client_EP: out LLU.End_Point_Type;
+                        Nick_Name: out ASU.Unbounded_String) is
+   begin
+     Ada.Text_IO.Put("INIT received from ");
+     Client_EP := LLU.End_Point_Type'Input (Buffer'Access);
+     Nick_Name := ASU.Unbounded_String'Input (Buffer'Access);
+     Ada.Text_IO.Put_Line (ASU.To_String(Nick_Name));
+   end Read_Init;
+
+
+   procedure Read_Writer(Nick_Name: in ASU.Unbounded_String) is
+   begin
+     Ada.Text_IO.Put("WRITER received from ");
+     Ada.Text_IO.Put(ASU.To_String(Nick_Name));
+     Ada.Text_IO.Put(": ");
+     Client_EP := LLU.End_Point_Type'Input (Buffer'Access);
+     Comment := ASU.Unbounded_String'Input (Buffer'Access);
+     Ada.Text_IO.Put_Line(ASU.To_String(Comment));
+   end Read_Writer;
+
 
 begin
 
@@ -40,32 +72,20 @@ begin
       loop
         -- reinicializa (vacía) el buffer para ahora recibir en él
         LLU.Reset(Buffer);
-
         -- espera 1000.0 segundos a recibir algo dirigido al Server_EP
-        --   . si llega antes, los datos recibidos van al Buffer
-        --     y Expired queda a False
-        --   . si pasados los 1000.0 segundos no ha llegado nada, se abandona
-        --     la espera y Expired queda a True
         LLU.Receive (Server_EP, Buffer'Access, 1000.0, Expired);
-
-        if Expired then
-           Ada.Text_IO.Put_Line ("Plazo expirado, vuelvo a intentarlo");
-        else
-           -- saca
-           Client_EP := LLU.End_Point_Type'Input (Buffer'Access);
-           Request := ASU.Unbounded_String'Input (Buffer'Access);
-           Ada.Text_IO.Put ("Petición: ");
-           Ada.Text_IO.Put_Line (ASU.To_String(Request));
-
-           -- reinicializa (vacía) el buffer
-           LLU.Reset (Buffer);
-
-           --  introduce el Unbounded_String en el Buffer
-           ASU.Unbounded_String'Output (Buffer'Access, Reply);
-
-           -- envía el contenido del Buffer
-           LLU.Send (Client_EP, Buffer'Access);
-        end if;
+        Type_Message(Message);
+        case Message is
+          when CM.Init =>
+            Read_Init(Client_EP, Nick_Name);
+            LLU.Reset (Buffer);
+          when CM.Writer =>
+            Read_Writer(Nick_Name);
+            LLU.Reset (Buffer);
+          when others =>
+            LLU.Reset (Buffer);
+        end case;
+        LLU.Reset (Buffer);
       end loop;
     else
       raise Usage_Error;
@@ -82,4 +102,37 @@ exception
                           Ada.Exceptions.Exception_Message(Ex));
     LLU.Finalize;
 
-end Server;
+end chat_server;
+
+
+
+
+
+
+
+--        if Expired then
+--           Ada.Text_IO.Put_Line ("Plazo expirado, vuelvo a intentarlo");
+--      else
+--           Type_Message(Message);
+--         case Message is
+--           when CM.Init =>
+--             Ada.Text_IO.Put("INIT received from ");
+--             Ada.Text_IO.Put_Line (ASU.To_String(Nick_Name));
+--             Client_EP := LLU.End_Point_Type'Input (Buffer'Access);
+--             Nick_Name := ASU.Unbounded_String'Input (Buffer'Access);
+               --Request := ASU.Unbounded_String'Input (Buffer'Access);
+
+
+
+               -- reinicializa (vacía) el buffer
+--               LLU.Reset (Buffer);
+
+               --  introduce el Unbounded_String en el Buffer
+--               ASU.Unbounded_String'Output (Buffer'Access, Reply);
+
+               -- envía el contenido del Buffer
+--               LLU.Send (Client_EP, Buffer'Access);
+--            when others =>
+--              LLU.Reset (Buffer);
+--            end case;
+--        end if;
